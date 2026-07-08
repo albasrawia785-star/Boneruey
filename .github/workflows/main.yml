@@ -32,13 +32,14 @@ jobs:
 
       - name: Inject Advanced Notification Bridge into Web Code
         run: |
-          # البحث عن ملف index.html الرئيسي لحقن الجسر البرمي الذكي لربط الويب بنظام أندرويد
           INDEX_HTML=$(find . -name "index.html" -not -path "*/node_modules/*" -not -path "*/android/*" | head -n 1)
           if [ -n "$INDEX_HTML" ]; then
-            echo "Injecting Intelligent Notification Bridge into $INDEX_HTML..."
-            POLYFILL="<script>
+            echo "Creating Polyfill file..."
+            
+            # كتابة كود الجسر البرمي داخل ملف مؤقت لتفادي أخطاء الرموز المتعارضة
+            cat << 'EOF' > polyfill.html
+            <script>
               (function() {
-                // إعداد كائن الإشعارات الوهمي ليتوافق مع Capacitor
                 window.Notification = function(title, options) {
                   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                     window.Capacitor.Plugins.LocalNotifications.schedule({
@@ -48,7 +49,6 @@ jobs:
                 };
                 window.Notification.permission = 'default';
                 
-                // دالة طلب الإذن الذكية: عند استدعائها تطلب الصلاحية الحقيقية من جهاز الأندرويد
                 window.Notification.requestPermission = function() {
                   return new Promise(function(resolve) {
                     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
@@ -56,7 +56,6 @@ jobs:
                         var status = (res.display === 'granted') ? 'granted' : 'denied';
                         window.Notification.permission = status;
                         resolve(status);
-                        // لتحديث واجهة الـ UI بعد الموافقة فوراً
                         if(typeof window.dispatchEvent === 'function') {
                           window.dispatchEvent(new Event('storage'));
                         }
@@ -71,9 +70,13 @@ jobs:
                   });
                 };
               })();
-            </script>"
-            # حقن السكريبت في أعلى الـ head تماماً لضمان تحميله قبل ملفات المشروع
-            sed -i "s|<head>|<head>$(echo $POLYFILL | tr '\n' ' ')|g" "$INDEX_HTML"
+            </script>
+          EOF
+
+            echo "Injecting Intelligent Notification Bridge into $INDEX_HTML..."
+            # استخدام awk لحقن الملف بشكل آمن تماماً بعد وسم <head> مباشرة
+            awk '1; /<head>/ {system("cat polyfill.html")}' "$INDEX_HTML" > temp.html && mv temp.html "$INDEX_HTML"
+            rm polyfill.html
           else
             echo "Warning: index.html not found, skipping plugin injection."
           fi
