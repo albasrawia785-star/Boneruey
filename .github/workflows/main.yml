@@ -30,24 +30,52 @@ jobs:
           fi
           rm -rf temp_unzip
 
-      - name: Inject Notification Polyfill into Web Code
+      - name: Inject Advanced Notification Bridge into Web Code
         run: |
-          # هذه الخطوة تبحث عن ملف index.html الرئيسي وتحقن كود وهمي لتفعيل كائن الـ Notification في المتصفح الداخلي
+          # البحث عن ملف index.html الرئيسي لحقن الجسر البرمي الذكي لربط الويب بنظام أندرويد
           INDEX_HTML=$(find . -name "index.html" -not -path "*/node_modules/*" -not -path "*/android/*" | head -n 1)
           if [ -n "$INDEX_HTML" ]; then
-            echo "Injecting Web Notification Polyfill into $INDEX_HTML..."
+            echo "Injecting Intelligent Notification Bridge into $INDEX_HTML..."
             POLYFILL="<script>
-              if (!('Notification' in window)) {
-                window.Notification = {
-                  permission: 'granted',
-                  requestPermission: function() { return Promise.resolve('granted'); }
+              (function() {
+                // إعداد كائن الإشعارات الوهمي ليتوافق مع Capacitor
+                window.Notification = function(title, options) {
+                  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                    window.Capacitor.Plugins.LocalNotifications.schedule({
+                      notifications: [{ id: Math.floor(Math.random() * 10000), title: title, body: (options && options.body) || '' }]
+                    });
+                  }
                 };
-              }
+                window.Notification.permission = 'default';
+                
+                // دالة طلب الإذن الذكية: عند استدعائها تطلب الصلاحية الحقيقية من جهاز الأندرويد
+                window.Notification.requestPermission = function() {
+                  return new Promise(function(resolve) {
+                    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                      window.Capacitor.Plugins.LocalNotifications.requestPermissions().then(function(res) {
+                        var status = (res.display === 'granted') ? 'granted' : 'denied';
+                        window.Notification.permission = status;
+                        resolve(status);
+                        // لتحديث واجهة الـ UI بعد الموافقة فوراً
+                        if(typeof window.dispatchEvent === 'function') {
+                          window.dispatchEvent(new Event('storage'));
+                        }
+                      }).catch(function() {
+                        window.Notification.permission = 'granted';
+                        resolve('granted');
+                      });
+                    } else {
+                      window.Notification.permission = 'granted';
+                      resolve('granted');
+                    }
+                  });
+                };
+              })();
             </script>"
-            # حقن الكود مباشرة بعد وسم <head> ليعمل قبل أي سكريبت آخر
+            # حقن السكريبت في أعلى الـ head تماماً لضمان تحميله قبل ملفات المشروع
             sed -i "s|<head>|<head>$(echo $POLYFILL | tr '\n' ' ')|g" "$INDEX_HTML"
           else
-            echo "Warning: index.html not found, skipping polyfill injection."
+            echo "Warning: index.html not found, skipping plugin injection."
           fi
 
       - name: Deep Clean Environment
