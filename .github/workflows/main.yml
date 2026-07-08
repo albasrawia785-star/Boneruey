@@ -30,6 +30,26 @@ jobs:
           fi
           rm -rf temp_unzip
 
+      - name: Inject Notification Polyfill into Web Code
+        run: |
+          # هذه الخطوة تبحث عن ملف index.html الرئيسي وتحقن كود وهمي لتفعيل كائن الـ Notification في المتصفح الداخلي
+          INDEX_HTML=$(find . -name "index.html" -not -path "*/node_modules/*" -not -path "*/android/*" | head -n 1)
+          if [ -n "$INDEX_HTML" ]; then
+            echo "Injecting Web Notification Polyfill into $INDEX_HTML..."
+            POLYFILL="<script>
+              if (!('Notification' in window)) {
+                window.Notification = {
+                  permission: 'granted',
+                  requestPermission: function() { return Promise.resolve('granted'); }
+                };
+              }
+            </script>"
+            # حقن الكود مباشرة بعد وسم <head> ليعمل قبل أي سكريبت آخر
+            sed -i "s|<head>|<head>$(echo $POLYFILL | tr '\n' ' ')|g" "$INDEX_HTML"
+          else
+            echo "Warning: index.html not found, skipping polyfill injection."
+          fi
+
       - name: Deep Clean Environment
         run: |
           rm -rf node_modules package-lock.json dist android
@@ -51,7 +71,6 @@ jobs:
       - name: Install Capacitor CLI, Core & Push Plugins
         run: |
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
-          # تثبيت الإشعارات المحلية والفورية معاً لضمان تغطية كافة أنواع الاستدعاءات البرمجية
           npm install @capacitor/local-notifications@latest @capacitor/push-notifications@latest
 
       - name: Initialize Capacitor Android
@@ -63,25 +82,10 @@ jobs:
       - name: Advanced Fix for Web Notifications & Permissions
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
-          
           if [ -f "$MANIFEST_PATH" ]; then
             echo "Injecting Android Manifest Permissions for Notifications..."
-            
-            # 1. حقن صلاحيات الإشعارات والانترنت والوصول الكامل للخلفية لمنع توقف الإشعارات
             sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
-            
-            # 2. السماح للمتصفح الداخلي بقبول النوافذ المنبثقة والبرمجيات الحساسة
             sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="true" android:domStorageEnabled="true"/' $MANIFEST_PATH
-          fi
-
-      - name: Force WebView to Enable Javascript & Web Notifications
-        run: |
-          # تعديل ملف MainActivity لتفعيل الإشعارات ودعم الـ Bridges برمجياً داخل بيئة أندرويد
-          MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.java")
-          if [ -n "$MAIN_ACTIVITY_PATH" ]; then
-            echo "Configuring MainActivity.java for Web Notifications..."
-            # تأكيد تحميل مكتبات الملحقات تلقائياً
-            sed -i '/public class MainActivity extends BridgeActivity/i import android.os.Bundle;\nimport com.getcapacitor.plugin.util.AssetUtil;' $MAIN_ACTIVITY_PATH
           fi
 
       - name: Update Kotlin & Gradle Versions for Java 21
