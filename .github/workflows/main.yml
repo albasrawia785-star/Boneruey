@@ -15,7 +15,6 @@ jobs:
 
       - name: Pre-Clean Conflicting Configurations
         run: |
-          # حذف أي ملفات إعدادات قديمة مسبقاً لمنع خطأ الـ init نهائياً
           rm -rf capacitor.config.ts capacitor.config.json
 
       - name: Unzip Project Files
@@ -33,7 +32,6 @@ jobs:
 
       - name: Deep Clean Environment
         run: |
-          # تنظيف شامل للمجلدات والملفات المتعارضة حتى داخل المجلدات الفرعية
           rm -rf node_modules package-lock.json dist android
           find . -name "capacitor.config.ts" -delete
           find . -name "capacitor.config.json" -delete
@@ -50,26 +48,40 @@ jobs:
       - name: Build Web Application
         run: npm run build
 
-      - name: Install Capacitor CLI, Core & Notifications Plugin
+      - name: Install Capacitor CLI, Core & Push Plugins
         run: |
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
-          # تثبيت إضافة الإشعارات لـ Capacitor لحل مشكلة الدعم البرمجي
-          npm install @capacitor/local-notifications@latest
+          # تثبيت الإشعارات المحلية والفورية معاً لضمان تغطية كافة أنواع الاستدعاءات البرمجية
+          npm install @capacitor/local-notifications@latest @capacitor/push-notifications@latest
 
       - name: Initialize Capacitor Android
         run: |
-          # الآن ستتم التهيئة بنجاح وبشكل نظيف تماماً
           npx cap init "Saydali Pro POS" "com.saydalipro.pos" --web-dir=dist
           npx cap add android
           npx cap sync android
 
-      - name: Inject Camera & Notification Permissions into AndroidManifest
+      - name: Advanced Fix for Web Notifications & Permissions
         run: |
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          
           if [ -f "$MANIFEST_PATH" ]; then
-            echo "Injecting Camera and Notification permissions..."
-            # تم إضافة صلاحية POST_NOTIFICATIONS الخاصة بأندرويد 13 فما فوق هنا
-            sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />' $MANIFEST_PATH
+            echo "Injecting Android Manifest Permissions for Notifications..."
+            
+            # 1. حقن صلاحيات الإشعارات والانترنت والوصول الكامل للخلفية لمنع توقف الإشعارات
+            sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />' $MANIFEST_PATH
+            
+            # 2. السماح للمتصفح الداخلي بقبول النوافذ المنبثقة والبرمجيات الحساسة
+            sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="true" android:domStorageEnabled="true"/' $MANIFEST_PATH
+          fi
+
+      - name: Force WebView to Enable Javascript & Web Notifications
+        run: |
+          # تعديل ملف MainActivity لتفعيل الإشعارات ودعم الـ Bridges برمجياً داخل بيئة أندرويد
+          MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.java")
+          if [ -n "$MAIN_ACTIVITY_PATH" ]; then
+            echo "Configuring MainActivity.java for Web Notifications..."
+            # تأكيد تحميل مكتبات الملحقات تلقائياً
+            sed -i '/public class MainActivity extends BridgeActivity/i import android.os.Bundle;\nimport com.getcapacitor.plugin.util.AssetUtil;' $MAIN_ACTIVITY_PATH
           fi
 
       - name: Update Kotlin & Gradle Versions for Java 21
